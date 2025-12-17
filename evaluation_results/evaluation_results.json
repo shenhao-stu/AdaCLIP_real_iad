@@ -1,0 +1,80 @@
+{
+  "gt_root": "./data/Real-IAD/realiad_variety_subset_extracted",
+  "pred_root": "./data/Real-IAD/realiad_variety_subset_predict_zero_shot",
+  "class_results": [
+    {
+      "category": "audio_jack_socket",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.901307321369182,
+      "samples": 192
+    },
+    {
+      "category": "battery",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.7319530412545645,
+      "samples": 191
+    },
+    {
+      "category": "button_battery_holder",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.9278468755776341,
+      "samples": 196
+    },
+    {
+      "category": "chip-inductor",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.6278355211377232,
+      "samples": 194
+    },
+    {
+      "category": "connector",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.945331791386674,
+      "samples": 192
+    },
+    {
+      "category": "flower_copper_shape",
+      "image_auroc": 0.9444444444444444,
+      "pixel_auroc": 0.9283635881206888,
+      "samples": 194
+    },
+    {
+      "category": "gear",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.9892753759695723,
+      "samples": 193
+    },
+    {
+      "category": "hex_plug",
+      "image_auroc": 0.9236111111111112,
+      "pixel_auroc": 0.8926041944365867,
+      "samples": 194
+    },
+    {
+      "category": "lock",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.9822703924182251,
+      "samples": 196
+    },
+    {
+      "category": "mouse_socket",
+      "image_auroc": 0.9714285714285714,
+      "pixel_auroc": 0.9282771986731352,
+      "samples": 194
+    },
+    {
+      "category": "pencil_sharpener",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.9716080905200633,
+      "samples": 189
+    },
+    {
+      "category": "thyristor",
+      "image_auroc": 1.0,
+      "pixel_auroc": 0.8406614107212307,
+      "samples": 193
+    }
+  ],
+  "mean_image_auroc": 0.9866236772486773,
+  "mean_pixel_auroc": 0.8889445667987732
+}

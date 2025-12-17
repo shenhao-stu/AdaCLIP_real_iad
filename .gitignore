@@ -1,0 +1,6 @@
+/result/
+/.idea/
+/__pycache__/
+/weights/
+/data/
+bpe_simple_vocab_16e6.txt.gz

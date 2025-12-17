@@ -1,0 +1,237 @@
+"""
+Real-IAD Evaluation Script
+Computes I-AUROC (Image-level AUROC) and P-AUROC (Pixel-level AUROC) metrics
+by comparing predicted results with ground truth.
+
+Based on eval_variety_auroc.py template.
+
+Usage:
+    python evaluate_realiad.py \
+        --gt_root ./data/Real-IAD/realiad_variety_subset_extracted \
+        --pred_root ./data/Real-IAD/realiad_variety_subset_predict
+"""
+import json
+import os
+import sys
+import argparse
+import numpy as np
+from PIL import Image
+from sklearn.metrics import roc_auc_score
+
+
+def load_json(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def evaluate(gt_root, pred_root, output_file=None):
+    gt_meta_path = os.path.join(gt_root, 'meta.json')
+    pred_meta_path = os.path.join(pred_root, 'meta.json')
+    
+    if not os.path.exists(gt_meta_path):
+        print(f"Error: GT meta file not found at {gt_meta_path}")
+        return
+    if not os.path.exists(pred_meta_path):
+        print(f"Error: Pred meta file not found at {pred_meta_path}")
+        return
+
+    print(f"Loading GT from: {gt_meta_path}")
+    print(f"Loading Pred from: {pred_meta_path}")
+
+    gt_data = load_json(gt_meta_path)['test']
+    pred_data = load_json(pred_meta_path)['test']
+    
+    # Categories
+    categories = sorted(list(gt_data.keys()))
+    
+    print(f"\n{'Category':<25} {'Image AUROC':<15} {'Pixel AUROC':<15} {'Samples':<10}")
+    print("-" * 75)
+
+    # Store AUROC for each category
+    img_aurocs = []
+    pix_aurocs = []
+    results_list = []
+    
+    for cat in categories:
+        gt_samples = gt_data.get(cat, [])
+        pred_samples = pred_data.get(cat, [])
+        
+        # Map pred samples by img_path for easy lookup
+        pred_map = {item['img_path']: item for item in pred_samples}
+        
+        img_gt_labels = []
+        img_pred_scores = []
+        
+        pixel_gt_list = []
+        pixel_pred_list = []
+        
+        for gt_item in gt_samples:
+            img_path = gt_item['img_path']
+            if img_path not in pred_map:
+                continue
+                
+            pred_item = pred_map[img_path]
+            
+            # --- Image Level ---
+            # GT: anomaly (0/1)
+            gt_anomaly = gt_item.get('anomaly', 0)
+            if isinstance(gt_anomaly, str):
+                gt_anomaly = int(gt_anomaly) if gt_anomaly else 0
+            img_gt_labels.append(int(gt_anomaly))
+            
+            # Pred: anomaly (0/1 or score)
+            pred_anomaly = pred_item.get('anomaly', 0)
+            if isinstance(pred_anomaly, str):
+                pred_anomaly = float(pred_anomaly) if pred_anomaly else 0.0
+            img_pred_scores.append(float(pred_anomaly))
+            
+            # --- Pixel Level ---
+            gt_mask_path = gt_item.get('mask_path')
+            pred_mask_path = pred_item.get('mask_path')
+            
+            # Load GT mask (Binary)
+            gt_mask = None
+            if gt_mask_path:
+                gt_mask_full = os.path.join(gt_root, gt_mask_path)
+                if os.path.exists(gt_mask_full):
+                    try:
+                        m = Image.open(gt_mask_full).convert('L')
+                        gt_mask = (np.array(m) > 128).astype(np.float32)  # Binarize GT
+                    except:
+                        gt_mask = None
+            
+            # Load Pred mask (Continuous for AUROC)
+            pred_mask = None
+            if pred_mask_path:
+                pred_mask_full = os.path.join(pred_root, pred_mask_path)
+                if os.path.exists(pred_mask_full):
+                    try:
+                        m = Image.open(pred_mask_full).convert('L')
+                        pred_mask = np.array(m).astype(np.float32) / 255.0
+                    except:
+                        pred_mask = None
+            
+            # Determine shape
+            shape = None
+            if gt_mask is not None:
+                shape = gt_mask.shape
+            elif pred_mask is not None:
+                shape = pred_mask.shape
+            else:
+                # Need to read original image to get shape
+                img_full_path = os.path.join(gt_root, img_path)
+                if os.path.exists(img_full_path):
+                    try:
+                        img = Image.open(img_full_path)
+                        shape = (img.size[1], img.size[0])  # H, W
+                    except:
+                        shape = None
+            
+            if shape is None:
+                continue
+                
+            # Fill None with zeros
+            if gt_mask is None:
+                gt_mask = np.zeros(shape, dtype=np.float32)
+            if pred_mask is None:
+                pred_mask = np.zeros(shape, dtype=np.float32)
+                
+            # Resize Pred to GT if needed
+            if pred_mask.shape != gt_mask.shape:
+                try:
+                    pred_img = Image.fromarray((pred_mask * 255).astype(np.uint8))
+                    pred_img = pred_img.resize((gt_mask.shape[1], gt_mask.shape[0]), Image.BILINEAR)
+                    pred_mask = np.array(pred_img).astype(np.float32) / 255.0
+                except:
+                    continue
+                
+            pixel_gt_list.append(gt_mask.flatten())
+            pixel_pred_list.append(pred_mask.flatten())
+            
+        # Calculate Metrics
+        num_samples = len(img_gt_labels)
+        if not img_gt_labels:
+            print(f"{cat:<25} {'N/A':<15} {'N/A':<15} {0:<10}")
+            continue
+            
+        # Image AUROC
+        try:
+            if len(set(img_gt_labels)) > 1:
+                img_auroc = roc_auc_score(img_gt_labels, img_pred_scores)
+            else:
+                img_auroc = 0.5  # All same class
+        except Exception as e:
+            img_auroc = 0.0
+            
+        # Pixel AUROC
+        try:
+            if pixel_gt_list:
+                all_gt = np.concatenate(pixel_gt_list)
+                all_pred = np.concatenate(pixel_pred_list)
+                
+                if len(np.unique(all_gt)) > 1:
+                    pixel_auroc = roc_auc_score(all_gt, all_pred)
+                else:
+                    pixel_auroc = 0.5
+            else:
+                pixel_auroc = 0.0
+        except Exception as e:
+            pixel_auroc = 0.0
+
+        # Store valid AUROC
+        img_aurocs.append(img_auroc)
+        pix_aurocs.append(pixel_auroc)
+        
+        results_list.append({
+            'category': cat,
+            'image_auroc': img_auroc,
+            'pixel_auroc': pixel_auroc,
+            'samples': num_samples
+        })
+            
+        print(f"{cat:<25} {img_auroc:.4f}           {pixel_auroc:.4f}           {num_samples:<10}")
+
+    # Mean AUROC over all classes
+    if img_aurocs:
+        mean_img_auroc = float(np.mean(img_aurocs))
+    else:
+        mean_img_auroc = float('nan')
+
+    if pix_aurocs:
+        mean_pix_auroc = float(np.mean(pix_aurocs))
+    else:
+        mean_pix_auroc = float('nan')
+
+    print("-" * 75)
+    print(f"Mean over classes: image_AUROC={mean_img_auroc:.4f}  pixel_AUROC={mean_pix_auroc:.4f}")
+    
+    # Save results to file
+    if output_file:
+        output_data = {
+            'gt_root': gt_root,
+            'pred_root': pred_root,
+            'class_results': results_list,
+            'mean_image_auroc': mean_img_auroc,
+            'mean_pixel_auroc': mean_pix_auroc,
+        }
+        with open(output_file, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        print(f"\nResults saved to: {output_file}")
+    
+    return mean_img_auroc, mean_pix_auroc
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser("Real-IAD Evaluation", add_help=True)
+    
+    parser.add_argument("--gt_root", type=str, 
+                        default='./data/Real-IAD/realiad_variety_subset_extracted',
+                        help="Path to the ground truth dataset root")
+    parser.add_argument("--pred_root", type=str, 
+                        default='./data/Real-IAD/realiad_variety_subset_predict',
+                        help="Path to the prediction dataset root")
+    parser.add_argument("--output_file", type=str, default=None,
+                        help="Path to save evaluation results as JSON")
+    
+    args = parser.parse_args()
+    evaluate(args.gt_root, args.pred_root, args.output_file)
