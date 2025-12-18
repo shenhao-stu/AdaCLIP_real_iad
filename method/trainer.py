@@ -215,8 +215,8 @@ class AdaCLIP_Trainer(nn.Module):
             )
 
         metric_dict = dict()
-        for obj in obj_list:
-            metric_dict[obj] = dict()
+        # for obj in obj_list:
+        #     metric_dict[obj] = dict()
 
         for obj in obj_list:
             metric = calculate_metric(results, obj)

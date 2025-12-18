@@ -53,6 +53,11 @@ class Logger(object):
 
 def log_metrics(metrics, logger, tensorboard_logger, epoch):
     def log_single_class(data, tag):
+        required_keys = ['auroc_im', 'f1_im', 'ap_im', 'auroc_px', 'f1_px', 'ap_px']
+        if not all(k in data for k in required_keys):
+            print(f"Warning: Skipping {tag} due to missing metrics.")
+            return
+
         logger.info(
             '{:>15} \t\tI-Auroc:{:.2f} \tI-F1:{:.2f} \tI-AP:{:.2f} \tP-Auroc:{:.2f} \tP-F1:{:.2f} \tP-AP:{:.2f}'.
             format(tag,
@@ -64,7 +69,7 @@ def log_metrics(metrics, logger, tensorboard_logger, epoch):
                    data['ap_px'])
         )
         # Adding scalar metrics to TensorBoard
-        for metric_name in ['auroc_im', 'f1_im', 'ap_im', 'auroc_px', 'f1_px', 'ap_px']:
+        for metric_name in required_keys:
             tensorboard_logger.add_scalar(f'{tag}-{metric_name}', data[metric_name], epoch)
 
     for tag, data in metrics.items():

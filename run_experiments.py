@@ -128,7 +128,9 @@ def main():
                     "parameters": params,
                     "metrics": {
                         "mean_image_auroc": eval_data.get('mean_image_auroc'),
+                        "mean_image_f1": eval_data.get('mean_image_f1'),
                         "mean_pixel_auroc": eval_data.get('mean_pixel_auroc'),
+                        "mean_pixel_f1": eval_data.get('mean_pixel_f1'),
                         "class_results": eval_data.get('class_results', [])
                     },
                     "output_dir": output_root
@@ -139,7 +141,7 @@ def main():
                 with open(RESULTS_FILE, 'a') as f:
                     f.write(json.dumps(result_record) + "\n")
                     
-                print(f"  Saved metrics: I-AUROC={result_record['metrics']['mean_image_auroc']:.4f}, P-AUROC={result_record['metrics']['mean_pixel_auroc']:.4f}")
+                print(f"  Saved metrics: I-AUROC={result_record['metrics']['mean_image_auroc']:.4f}, I-F1={result_record['metrics'].get('mean_image_f1', 0):.4f}, P-AUROC={result_record['metrics']['mean_pixel_auroc']:.4f}, P-F1={result_record['metrics'].get('mean_pixel_f1', 0):.4f}")
             except Exception as e:
                 print(f"  Error parsing evaluation results: {e}")
         else:

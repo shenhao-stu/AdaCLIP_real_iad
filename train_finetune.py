@@ -200,7 +200,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--image_size", type=int, default=518, help="Size of the input images")
     parser.add_argument("--print_freq", type=int, default=1, help="Frequency of print statements")
-    parser.add_argument("--valid_freq", typen=int, default=1, help="Frequency of validation")
+    parser.add_argument("--valid_freq", type=int, default=1, help="Frequency of validation")
     parser.add_argument("--save_freq", type=int, default=1, help="Frequency of saving checkpoint")
     parser.add_argument("--test_sample_ratio", type=float, default=1.0, help="Ratio of test data to use (0.0 to 1.0)")
     

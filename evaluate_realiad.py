@@ -1,6 +1,6 @@
 """
 Real-IAD Evaluation Script
-Computes I-AUROC (Image-level AUROC) and P-AUROC (Pixel-level AUROC) metrics
+Computes I-AUROC (Image-level AUROC), I-F1, P-AUROC (Pixel-level AUROC), and P-F1 metrics
 by comparing predicted results with ground truth.
 
 Based on eval_variety_auroc.py template.
@@ -16,12 +16,32 @@ import sys
 import argparse
 import numpy as np
 from PIL import Image
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve
 
 
 def load_json(path):
     with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+
+def compute_f1_max(gt, pred):
+    try:
+        gt = np.array(gt)
+        pred = np.array(pred)
+        
+        if len(np.unique(gt)) < 2:
+            return 0.0
+            
+        precisions, recalls, _ = precision_recall_curve(gt, pred)
+        f1_scores = (2 * precisions * recalls) / (precisions + recalls + 1e-10)
+        f1_scores = f1_scores[np.isfinite(f1_scores)]
+        
+        if len(f1_scores) == 0:
+            return 0.0
+            
+        return float(np.max(f1_scores))
+    except Exception:
+        return 0.0
 
 
 def evaluate(gt_root, pred_root, output_file=None):
@@ -44,12 +64,14 @@ def evaluate(gt_root, pred_root, output_file=None):
     # Categories
     categories = sorted(list(gt_data.keys()))
     
-    print(f"\n{'Category':<25} {'Image AUROC':<15} {'Pixel AUROC':<15} {'Samples':<10}")
-    print("-" * 75)
+    print(f"\n{'Category':<25} {'I-AUROC':<10} {'I-F1':<10} {'P-AUROC':<10} {'P-F1':<10} {'Samples':<10}")
+    print("-" * 85)
 
-    # Store AUROC for each category
+    # Store metrics for each category
     img_aurocs = []
+    img_f1s = []
     pix_aurocs = []
+    pix_f1s = []
     results_list = []
     
     for cat in categories:
@@ -151,10 +173,10 @@ def evaluate(gt_root, pred_root, output_file=None):
         # Calculate Metrics
         num_samples = len(img_gt_labels)
         if not img_gt_labels:
-            print(f"{cat:<25} {'N/A':<15} {'N/A':<15} {0:<10}")
+            print(f"{cat:<25} {'N/A':<10} {'N/A':<10} {'N/A':<10} {'N/A':<10} {0:<10}")
             continue
             
-        # Image AUROC
+        # Image Metrics
         try:
             if len(set(img_gt_labels)) > 1:
                 img_auroc = roc_auc_score(img_gt_labels, img_pred_scores)
@@ -163,7 +185,9 @@ def evaluate(gt_root, pred_root, output_file=None):
         except Exception as e:
             img_auroc = 0.0
             
-        # Pixel AUROC
+        img_f1 = compute_f1_max(img_gt_labels, img_pred_scores)
+            
+        # Pixel Metrics
         try:
             if pixel_gt_list:
                 all_gt = np.concatenate(pixel_gt_list)
@@ -173,37 +197,40 @@ def evaluate(gt_root, pred_root, output_file=None):
                     pixel_auroc = roc_auc_score(all_gt, all_pred)
                 else:
                     pixel_auroc = 0.5
+                    
+                pixel_f1 = compute_f1_max(all_gt, all_pred)
             else:
                 pixel_auroc = 0.0
+                pixel_f1 = 0.0
         except Exception as e:
             pixel_auroc = 0.0
+            pixel_f1 = 0.0
 
-        # Store valid AUROC
+        # Store valid metrics
         img_aurocs.append(img_auroc)
+        img_f1s.append(img_f1)
         pix_aurocs.append(pixel_auroc)
+        pix_f1s.append(pixel_f1)
         
         results_list.append({
             'category': cat,
             'image_auroc': img_auroc,
+            'image_f1': img_f1,
             'pixel_auroc': pixel_auroc,
+            'pixel_f1': pixel_f1,
             'samples': num_samples
         })
             
-        print(f"{cat:<25} {img_auroc:.4f}           {pixel_auroc:.4f}           {num_samples:<10}")
+        print(f"{cat:<25} {img_auroc:.4f}     {img_f1:.4f}     {pixel_auroc:.4f}     {pixel_f1:.4f}     {num_samples:<10}")
 
-    # Mean AUROC over all classes
-    if img_aurocs:
-        mean_img_auroc = float(np.mean(img_aurocs))
-    else:
-        mean_img_auroc = float('nan')
+    # Mean Metrics over all classes
+    mean_img_auroc = float(np.mean(img_aurocs)) if img_aurocs else float('nan')
+    mean_img_f1 = float(np.mean(img_f1s)) if img_f1s else float('nan')
+    mean_pix_auroc = float(np.mean(pix_aurocs)) if pix_aurocs else float('nan')
+    mean_pix_f1 = float(np.mean(pix_f1s)) if pix_f1s else float('nan')
 
-    if pix_aurocs:
-        mean_pix_auroc = float(np.mean(pix_aurocs))
-    else:
-        mean_pix_auroc = float('nan')
-
-    print("-" * 75)
-    print(f"Mean over classes: image_AUROC={mean_img_auroc:.4f}  pixel_AUROC={mean_pix_auroc:.4f}")
+    print("-" * 85)
+    print(f"Mean: I-AUROC={mean_img_auroc:.4f} I-F1={mean_img_f1:.4f} P-AUROC={mean_pix_auroc:.4f} P-F1={mean_pix_f1:.4f}")
     
     # Save results to file
     if output_file:
@@ -212,7 +239,9 @@ def evaluate(gt_root, pred_root, output_file=None):
             'pred_root': pred_root,
             'class_results': results_list,
             'mean_image_auroc': mean_img_auroc,
+            'mean_image_f1': mean_img_f1,
             'mean_pixel_auroc': mean_pix_auroc,
+            'mean_pixel_f1': mean_pix_f1
         }
         with open(output_file, 'w') as f:
             json.dump(output_data, f, indent=2)
