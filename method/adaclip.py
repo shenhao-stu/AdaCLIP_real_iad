@@ -60,20 +60,29 @@ class PromptLayer(nn.Module):
     def set_dynamic_prompts(self, dynamic_prompts):
         self.dynamic_prompts = dynamic_prompts
 
-    def forward_text(self, resblock, indx, x, k_x=None, v_x=None, attn_mask: Optional[torch.Tensor] = None):
+    def forward_text(self, resblock, indx, x, k_x=None, v_x=None, attn_mask: Optional[torch.Tensor] = None, batch_idx=None):
         if self.enabled:
             length = self.length
 
             # only prompt the first J layers
             if indx < self.depth:
+                
+                # Prepare dynamic prompts
+                dyn_prompts = self.dynamic_prompts
+                if 'D' in self.prompting_type:
+                    if batch_idx is not None:
+                        # Slice the specific dynamic prompt for this sample and add batch dim for broadcasting
+                        # self.dynamic_prompts: (B, L, D) -> [batch_idx]: (L, D) -> (1, L, D)
+                        dyn_prompts = self.dynamic_prompts[batch_idx].unsqueeze(0)
+                
                 if 'S' in self.prompting_type and 'D' in self.prompting_type: # both
                     static_prompts = self.static_prompts[indx].unsqueeze(0).expand(x.shape[1], -1, -1)
-                    textual_context = self.dynamic_prompts + static_prompts
+                    textual_context = dyn_prompts + static_prompts
                 elif 'S' in self.prompting_type:  # static
                     static_prompts = self.static_prompts[indx].unsqueeze(0).expand(x.shape[1], -1, -1)
                     textual_context = static_prompts
                 elif 'D' in self.prompting_type:  # dynamic
-                    textual_context = self.dynamic_prompts
+                    textual_context = dyn_prompts
                 else:
                     print('You should at least choose one type of prompts when the prompting branches are not none.')
                     raise NotImplementedError
@@ -136,9 +145,9 @@ class PromptLayer(nn.Module):
 
         return x, tokens, attn_tmp
 
-    def forward(self, resblock, indx, x, k_x=None, v_x=None, attn_mask: Optional[torch.Tensor] = None):
+    def forward(self, resblock, indx, x, k_x=None, v_x=None, attn_mask: Optional[torch.Tensor] = None, batch_idx=None):
         if self.is_text:
-            return self.forward_text(resblock, indx, x, k_x, v_x, attn_mask)
+            return self.forward_text(resblock, indx, x, k_x, v_x, attn_mask, batch_idx)
         else:
             return self.forward_visual(resblock, indx, x, k_x, v_x, attn_mask)
 
@@ -192,12 +201,12 @@ class TextEmbebddingLayer(nn.Module):
 
             if self.fixed:
                 if self.ensemble_text_features.get(text) is None:
-                    text_features = self.encode_text(model, text, device)
+                    text_features = self.encode_text(model, text, device, batch_idx=indx)
                     self.ensemble_text_features[text] = text_features
                 else:
                     text_features = self.ensemble_text_features[text]
             else:
-                text_features = self.encode_text(model, text, device)
+                text_features = self.encode_text(model, text, device, batch_idx=indx)
                 self.ensemble_text_features[text] = text_features
 
             text_feature_list.append(text_features)
@@ -207,7 +216,7 @@ class TextEmbebddingLayer(nn.Module):
 
         return text_features
 
-    def encode_text(self, model, text, device):
+    def encode_text(self, model, text, device, batch_idx=None):
         text_features = []
         for i in range(len(self.prompt_state)):
             text = text.replace('-', ' ').replace('_', ' ')
@@ -218,7 +227,7 @@ class TextEmbebddingLayer(nn.Module):
                     prompted_sentence.append(template.format(s))
             prompted_sentence = self.tokenize(prompted_sentence, context_length=77).to(device)
 
-            class_embeddings = model.encode_text(prompted_sentence)
+            class_embeddings = model.encode_text(prompted_sentence, batch_idx=batch_idx)
 
             #class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
@@ -490,7 +499,7 @@ class AdaCLIP(nn.Module):
 
         return proj_cls_tokens, proj_patch_tokens
 
-    def encode_text(self, text):
+    def encode_text(self, text, batch_idx=None):
         cast_dtype = self.transformer.get_cast_dtype()
 
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
@@ -500,7 +509,7 @@ class AdaCLIP(nn.Module):
 
         for indx, r in enumerate(self.transformer.resblocks):
             # add prompt here
-            x, attn_tmp = self.text_prompter(r, indx, x, k_x=None, v_x=None, attn_mask=self.attn_mask)
+            x, attn_tmp = self.text_prompter(r, indx, x, k_x=None, v_x=None, attn_mask=self.attn_mask, batch_idx=batch_idx)
 
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x)  # [batch_size, n_ctx, transformer.width]

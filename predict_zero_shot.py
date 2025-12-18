@@ -35,7 +35,7 @@ def main():
     
     args = parser.parse_args()
     
-    setup_seed(111)
+    setup_seed(42)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Load config

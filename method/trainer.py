@@ -1,6 +1,7 @@
 import cv2
 import torchvision.transforms as transforms
 from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
 
 from loss import FocalLoss, BinaryDiceLoss
 from tools import visualization, calculate_metric, calculate_average_metric
@@ -143,9 +144,12 @@ class AdaCLIP_Trainer(nn.Module):
     def train_epoch(self, loader):
         self.clip_model.train()
         loss_list = []
-        for items in loader:
+        loop = tqdm(loader, desc="Training Batch", leave=False)
+        for items in loop:
             loss = self.train_one_batch(items)
-            loss_list.append(loss.item())
+            loss_val = loss.item()
+            loss_list.append(loss_val)
+            loop.set_postfix(loss=loss_val)
 
         return np.mean(loss_list)
 
